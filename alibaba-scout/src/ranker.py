@@ -1,6 +1,6 @@
 """
 Uses OpenAI to rank scraped products by viral / resale potential.
-Returns the top 10 most promising products.
+Returns the top N most promising products.
 """
 
 import json
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 RANKING_PROMPT = """You are an expert e-commerce product analyst specializing in dropshipping and resale businesses.
 
 I will give you a list of products scraped from Chinese wholesale suppliers (Alibaba, DHgate, 1688).
-Your job is to rank them by VIRAL & RESALE POTENTIAL and return the TOP 10.
+Your job is to rank them by VIRAL & RESALE POTENTIAL and return the TOP {top_n}.
 
 Scoring criteria (weight each equally):
 1. **Trend potential** – Is this product trending on TikTok/Instagram/Amazon? Is it a novelty item?
@@ -24,14 +24,14 @@ Scoring criteria (weight each equally):
 5. **Shippability** – Small, light, not fragile = easier to sell online.
 
 IMPORTANT RULES:
-- Return EXACTLY 10 products (or fewer if less than 10 were provided).
+- Return EXACTLY {top_n} products (or fewer if less than {top_n} were provided).
 - Return ONLY valid JSON — no markdown, no explanation, no preamble.
 - Preserve the original product data exactly (name, price, link, source, category).
 - Add a "score" field (1-100) and a "reason" field (1 sentence why it's viral).
 
 Return format:
 [
-  {
+  {{
     "name": "...",
     "price": "...",
     "link": "...",
@@ -43,15 +43,20 @@ Return format:
     "supplier": "...",
     "score": 85,
     "reason": "Trending on TikTok, high perceived value, great margins."
-  }
+  }}
 ]
 """
 
 
-def rank_products(products: list[Product], api_key: str, model: str = "gpt-4o-mini") -> list[dict]:
+def rank_products(
+    products: list[Product],
+    api_key: str,
+    model: str = "gpt-4o-mini",
+    top_n: int = 5,
+) -> list[dict]:
     """
     Send products to OpenAI for viral potential ranking.
-    Returns top 10 as list of dicts with added 'score' and 'reason' fields.
+    Returns top N as list of dicts with added 'score' and 'reason' fields.
     """
     if not products:
         logger.warning("No products to rank")
@@ -61,18 +66,19 @@ def rank_products(products: list[Product], api_key: str, model: str = "gpt-4o-mi
     product_data = [p.to_dict() for p in products]
     product_json = json.dumps(product_data, ensure_ascii=False, indent=2)
 
+    prompt = RANKING_PROMPT.format(top_n=top_n)
     client = OpenAI(api_key=api_key)
 
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": RANKING_PROMPT},
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": f"Here are {len(products)} products to rank:\n\n{product_json}"},
             ],
             temperature=0.3,
             max_tokens=4000,
-            response_format={"type": "json_object"}  # Force JSON output
+            response_format={"type": "json_object"}
         )
 
         raw = response.choices[0].message.content.strip()
@@ -87,7 +93,6 @@ def rank_products(products: list[Product], api_key: str, model: str = "gpt-4o-mi
                     parsed = parsed[key]
                     break
             else:
-                # If it's a dict but no known key, try first list value
                 for v in parsed.values():
                     if isinstance(v, list):
                         parsed = v
@@ -100,26 +105,25 @@ def rank_products(products: list[Product], api_key: str, model: str = "gpt-4o-mi
         # Sort by score descending
         parsed.sort(key=lambda x: x.get("score", 0), reverse=True)
 
-        logger.info(f"OpenAI ranked {len(parsed)} products")
-        return parsed[:10]
+        logger.info(f"OpenAI ranked {len(parsed)} products, returning top {top_n}")
+        return parsed[:top_n]
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse OpenAI JSON response: {e}")
-        logger.debug(f"Raw response: {raw}")
         return []
     except Exception as e:
         logger.error(f"OpenAI API call failed: {e}")
         return []
 
 
-def rank_products_fallback(products: list[Product]) -> list[dict]:
+def rank_products_fallback(products: list[Product], top_n: int = 5) -> list[dict]:
     """
     Fallback ranking without OpenAI — rank by price info availability
     and category diversity. Used when API key is missing or call fails.
     """
     scored = []
     for p in products:
-        score = 50  # base
+        score = 50
         if p.price and p.price != "See listing":
             score += 15
         if p.orders_or_reviews:
@@ -132,18 +136,19 @@ def rank_products_fallback(products: list[Product]) -> list[dict]:
             score += 5
         scored.append({**p.to_dict(), "score": score, "reason": "Auto-scored (no AI)"})
 
-    # Sort and ensure category diversity
     scored.sort(key=lambda x: x["score"], reverse=True)
 
     # Pick top items while maintaining category spread
     seen_cats: dict[str, int] = {}
     diverse: list[dict] = []
+    max_per_cat = max(1, (top_n // len(set(p.category for p in products)) + 1)) if products else 2
+
     for item in scored:
         cat = item["category"]
-        if seen_cats.get(cat, 0) < 3:  # max 3 per category
+        if seen_cats.get(cat, 0) < max_per_cat:
             diverse.append(item)
             seen_cats[cat] = seen_cats.get(cat, 0) + 1
-        if len(diverse) >= 10:
+        if len(diverse) >= top_n:
             break
 
     return diverse
