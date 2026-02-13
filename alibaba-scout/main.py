@@ -5,9 +5,10 @@ Alibaba Scout — Daily viral product finder.
 Scrapes Chinese wholesale suppliers → ranks with OpenAI → sends via Telegram.
 
 Usage:
-    python main.py                    # Full run: scrape → rank → notify
-    python main.py --scrape-only      # Just scrape and print results
-    python main.py --dry-run          # Scrape + rank but don't send Telegram
+    python main.py                                        # 5 products, auto label
+    python main.py --count 5 --session-label "Morning"    # Custom count + label
+    python main.py --scrape-only                          # Just scrape and print
+    python main.py --dry-run                              # Scrape + rank, no Telegram
 """
 
 import argparse
@@ -50,6 +51,8 @@ def get_config() -> dict:
         "openai_model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
         "telegram_bot_token": os.environ.get("TELEGRAM_BOT_TOKEN", ""),
         "telegram_chat_id": os.environ.get("TELEGRAM_CHAT_ID", ""),
+        "product_count": int(os.environ.get("PRODUCT_COUNT", "5")),
+        "session_label": os.environ.get("SESSION_LABEL", ""),
     }
 
 
@@ -59,7 +62,8 @@ def save_results(products: list[dict], filename: str | None = None):
     output_dir.mkdir(exist_ok=True)
 
     if not filename:
-        filename = f"products_{datetime.now().strftime('%Y-%m-%d')}.json"
+        ts = datetime.now().strftime('%Y-%m-%d_%H%M')
+        filename = f"products_{ts}.json"
 
     filepath = output_dir / filename
     with open(filepath, "w", encoding="utf-8") as f:
@@ -72,7 +76,7 @@ def save_results(products: list[dict], filename: str | None = None):
 def print_products(products: list[dict]):
     """Pretty-print products to console."""
     print("\n" + "=" * 60)
-    print("🔥 TOP VIRAL PRODUCTS TODAY")
+    print(f"🔥 TOP {len(products)} VIRAL PRODUCTS")
     print("=" * 60)
 
     for i, p in enumerate(products, 1):
@@ -92,8 +96,12 @@ async def run(args):
     """Main execution flow."""
     config = get_config()
 
+    # CLI args override env/defaults
+    count = args.count or config["product_count"]
+    session_label = args.session_label or config["session_label"]
+
     # ── Step 1: Scrape ────────────────────────────────────────
-    logger.info("📡 Scraping products from suppliers...")
+    logger.info(f"📡 Scraping products from suppliers (need top {count})...")
     try:
         products = await scrape_all_categories()
     except Exception as e:
@@ -102,12 +110,12 @@ async def run(args):
             send_error_alert(f"Scraping failed: {e}", config["telegram_bot_token"], config["telegram_chat_id"])
         sys.exit(1)
 
-    logger.info(f"Found {len(products)} products")
+    logger.info(f"Found {len(products)} products total")
 
     if not products:
         logger.warning("No products found. Exiting.")
         if config["telegram_bot_token"] and config["telegram_chat_id"]:
-            send_error_alert("No products found today.", config["telegram_bot_token"], config["telegram_chat_id"])
+            send_error_alert("No products found this session.", config["telegram_bot_token"], config["telegram_chat_id"])
         sys.exit(0)
 
     if args.scrape_only:
@@ -116,16 +124,19 @@ async def run(args):
         return
 
     # ── Step 2: Rank with OpenAI ──────────────────────────────
-    logger.info("🧠 Ranking products with AI...")
+    logger.info(f"🧠 Ranking products with AI (selecting top {count})...")
 
     if config["openai_api_key"]:
-        top_products = rank_products(products, config["openai_api_key"], config["openai_model"])
+        top_products = rank_products(
+            products, config["openai_api_key"],
+            model=config["openai_model"], top_n=count,
+        )
         if not top_products:
             logger.warning("OpenAI ranking returned empty, using fallback")
-            top_products = rank_products_fallback(products)
+            top_products = rank_products_fallback(products, top_n=count)
     else:
         logger.warning("No OPENAI_API_KEY set, using fallback ranking")
-        top_products = rank_products_fallback(products)
+        top_products = rank_products_fallback(products, top_n=count)
 
     print_products(top_products)
     save_results(top_products)
@@ -137,9 +148,14 @@ async def run(args):
     # ── Step 3: Send via Telegram ─────────────────────────────
     if config["telegram_bot_token"] and config["telegram_chat_id"]:
         logger.info("📬 Sending Telegram digest...")
-        success = send_daily_digest(top_products, config["telegram_bot_token"], config["telegram_chat_id"])
+        success = send_daily_digest(
+            top_products,
+            config["telegram_bot_token"],
+            config["telegram_chat_id"],
+            session_label=session_label,
+        )
         if success:
-            logger.info("✅ Daily digest sent!")
+            logger.info("✅ Digest sent!")
         else:
             logger.error("❌ Failed to send Telegram digest")
     else:
@@ -153,6 +169,8 @@ def main():
     parser = argparse.ArgumentParser(description="Alibaba Scout — Daily viral product finder")
     parser.add_argument("--scrape-only", action="store_true", help="Just scrape, don't rank or notify")
     parser.add_argument("--dry-run", action="store_true", help="Scrape + rank but don't send Telegram")
+    parser.add_argument("--count", type=int, default=None, help="Number of products to return (default: 5)")
+    parser.add_argument("--session-label", type=str, default="", help="Label for this session (e.g. morning/evening)")
     args = parser.parse_args()
 
     asyncio.run(run(args))
