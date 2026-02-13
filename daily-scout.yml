@@ -1,0 +1,64 @@
+name: Daily Product Scout
+
+on:
+  # ═══════════════════════════════════════════════════
+  #  Runs TWICE per day (Tbilisi time = UTC+4)
+  #  12:00 Tbilisi = 08:00 UTC
+  #  18:00 Tbilisi = 14:00 UTC
+  # ═══════════════════════════════════════════════════
+  schedule:
+    - cron: "0 8 * * *"
+    - cron: "0 14 * * *"
+
+  workflow_dispatch:
+    inputs:
+      product_count:
+        description: "Number of products to send (default 5)"
+        required: false
+        default: "5"
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine session label
+        id: session
+        run: |
+          HOUR=$(TZ="Asia/Tbilisi" date +%H)
+          if [ "$HOUR" -lt 15 ]; then
+            echo "label=noon" >> "$GITHUB_OUTPUT"
+          else
+            echo "label=evening" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Alibaba Scout
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4o-mini
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PRODUCT_COUNT: ${{ github.event.inputs.product_count || '5' }}
+          SESSION_LABEL: ${{ steps.session.outputs.label }}
+        run: python main.py --count "$PRODUCT_COUNT" --session-label "$SESSION_LABEL"
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: products-${{ github.run_number }}
+          path: output/*.json
+          retention-days: 30
