@@ -1,5 +1,5 @@
 """
-Sends the daily top-10 product digest via Telegram bot.
+Sends the product digest via Telegram bot with session labels.
 """
 
 import httpx
@@ -18,26 +18,36 @@ def _esc(text: str) -> str:
     return text
 
 
-def send_daily_digest(products: list[dict], bot_token: str, chat_id: str) -> bool:
+def send_daily_digest(
+    products: list[dict],
+    bot_token: str,
+    chat_id: str,
+    session_label: str = "",
+) -> bool:
     """
-    Send top-10 products as a formatted Telegram message.
-    Splits into multiple messages if too long.
+    Send top products as a formatted Telegram message.
+    session_label: e.g. "🌤 შუადღის სელექცია" or "🌙 საღამოს სელექცია"
     """
     if not products:
-        _send_message(bot_token, chat_id, "⚠️ No products found today\\. Will try again tomorrow\\!")
+        _send_message(bot_token, chat_id, "⚠️ No products found this session\\. Will try next time\\!")
         return False
 
     date_str = datetime.now().strftime("%d/%m/%Y")
+    time_str = datetime.now().strftime("%H:%M")
+    count = len(products)
 
+    # ── Build header ──────────────────────────────────────────
+    label = session_label or "🔥 Product Scout"
     header = (
-        f"🔥 *Daily Viral Products Scout* 🔥\n"
-        f"📅 {_esc(date_str)}\n"
-        f"{'─' * 30}\n\n"
+        f"*{_esc(label)}*\n"
+        f"📅 {_esc(date_str)}  ⏰ {_esc(time_str)}\n"
+        f"📦 Top {count} viral products\n"
+        f"{'─' * 28}\n\n"
     )
 
-    messages = [header]
     current_msg = header
 
+    # ── Build product entries ─────────────────────────────────
     for i, product in enumerate(products, 1):
         name = product.get("name", "Unknown")[:80]
         price = product.get("price", "N/A")
@@ -50,7 +60,6 @@ def send_daily_digest(products: list[dict], bot_token: str, chat_id: str) -> boo
         orders = product.get("orders_or_reviews", "")
         supplier = product.get("supplier", "")
 
-        # Category emoji
         cat_emoji = {
             "lamps": "💡", "telescopes": "🔭", "binoculars": "🔭",
             "kids_toys": "🧸", "electronics": "📱",
@@ -69,18 +78,23 @@ def send_daily_digest(products: list[dict], bot_token: str, chat_id: str) -> boo
             entry += f"💡 {_esc(reason)}\n"
         entry += f"🔗 [Open on {_esc(source)}]({link})\n\n"
 
-        # Telegram has 4096 char limit per message
+        # Telegram max 4096 chars — split if needed
         if len(current_msg) + len(entry) > 3800:
             _send_message(bot_token, chat_id, current_msg)
             current_msg = entry
         else:
             current_msg += entry
 
-    # Send remaining
-    footer = f"{'─' * 30}\n🤖 _Powered by Alibaba Scout Bot_"
+    # ── Footer ────────────────────────────────────────────────
+    next_session = "18:00" if "შუადღ" in (session_label or "") else "12:00"
+    footer = (
+        f"{'─' * 28}\n"
+        f"⏭ შემდეგი: {_esc(next_session)}\n"
+        f"🤖 _Alibaba Scout Bot_"
+    )
     current_msg += footer
-    success = _send_message(bot_token, chat_id, current_msg)
 
+    success = _send_message(bot_token, chat_id, current_msg)
     return success
 
 
