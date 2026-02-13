@@ -46,7 +46,7 @@ jobs:
           OPENAI_MODEL: gpt-4o-mini
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          PRODUCT_COUNT: ${{ github.event.inputs.product_count || '5' }}
+          PRODUCT_COUNT: ${{ github.event.inputs.product_count || '8' }}
           SESSION_LABEL: ${{ steps.session.outputs.label }}
         run: python main.py --count "$PRODUCT_COUNT" --session-label "$SESSION_LABEL"
 
