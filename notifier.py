@@ -1,5 +1,6 @@
 """
-Sends the product digest via Telegram bot with session labels.
+Sends the structured product digest via Telegram.
+3 sections: Viral / Astroman / Bestsellers
 """
 
 import httpx
@@ -15,6 +16,12 @@ SESSION_LABELS = {
     "evening": "🌙 საღამოს სელექცია",
 }
 
+SECTIONS = [
+    ("viral",       "🔥 VIRAL — TikTok პოტენციალი",        3),
+    ("astroman",    "🔭 ASTROMAN — მაღაზიისთვის",           5),
+    ("bestsellers", "🏆 BESTSELLERS — დამტკიცებული გაყიდვა", 2),
+]
+
 
 def _esc(text):
     for ch in r"_*[]()~`>#+-=|{}.!":
@@ -22,71 +29,89 @@ def _esc(text):
     return text
 
 
-def send_daily_digest(products, bot_token, chat_id, session_label=""):
-    if not products:
+def send_daily_digest(ranked, bot_token, chat_id, session_label=""):
+    """
+    ranked: dict with keys viral, astroman, bestsellers — each a list of product dicts.
+    """
+    total = sum(len(v) for v in ranked.values())
+    if total == 0:
         _send_message(bot_token, chat_id, "⚠️ No products found this session\\. Will try next time\\!")
         return False
 
     date_str = datetime.now().strftime("%d/%m/%Y")
     time_str = datetime.now().strftime("%H:%M")
-    count = len(products)
-
-    label = SESSION_LABELS.get(session_label, session_label or "🔥 Product Scout")
+    label = SESSION_LABELS.get(session_label, session_label or "📦 Product Scout")
 
     header = (
         f"*{_esc(label)}*\n"
         f"📅 {_esc(date_str)}  ⏰ {_esc(time_str)}\n"
-        f"📦 Top {count} viral products\n"
-        f"{'─' * 28}\n\n"
+        f"{'─' * 30}\n\n"
     )
 
-    current_msg = header
+    messages = [header]
+    current = header
 
-    for i, product in enumerate(products, 1):
-        name = product.get("name", "Unknown")[:80]
-        price = product.get("price", "N/A")
-        link = product.get("link", "#")
-        source = product.get("source", "Unknown")
-        category = product.get("category", "")
-        score = product.get("score", 0)
-        reason = product.get("reason", "")
-        min_order = product.get("min_order", "")
-        orders = product.get("orders_or_reviews", "")
-        supplier = product.get("supplier", "")
+    for section_key, section_title, expected_count in SECTIONS:
+        products = ranked.get(section_key, [])
+        if not products:
+            continue
 
-        cat_emoji = {
-            "lamps": "💡", "telescopes": "🔭", "binoculars": "🔭",
-            "kids_toys": "🧸", "electronics": "📱",
-        }.get(category, "📦")
+        section_header = f"*{_esc(section_title)}* \\({len(products)}\\)\n\n"
 
-        entry = f"{cat_emoji} *{i}\\. {_esc(name)}*\n"
-        entry += f"💰 {_esc(price)}\n"
-        if min_order:
-            entry += f"📦 MOQ: {_esc(min_order)}\n"
-        if orders:
-            entry += f"🔥 {_esc(orders)}\n"
-        if supplier:
-            entry += f"🏭 {_esc(supplier)}\n"
-        entry += f"⭐ Score: {score}/100\n"
-        if reason:
-            entry += f"💡 {_esc(reason)}\n"
-        entry += f"🔗 [Open on {_esc(source)}]({link})\n\n"
-
-        if len(current_msg) + len(entry) > 3800:
-            _send_message(bot_token, chat_id, current_msg)
-            current_msg = entry
+        if len(current) + len(section_header) > 3800:
+            messages.append(current)
+            current = section_header
         else:
-            current_msg += entry
+            current += section_header
+
+        for i, product in enumerate(products, 1):
+            name = product.get("name", "Unknown")[:80]
+            price = product.get("price", "N/A")
+            link = product.get("link", "#")
+            source = product.get("source", "Unknown")
+            score = product.get("score", 0)
+            reason = product.get("reason", "")
+            min_order = product.get("min_order", "")
+            orders = product.get("orders_or_reviews", "")
+            supplier = product.get("supplier", "")
+
+            entry = f"*{i}\\. {_esc(name)}*\n"
+            entry += f"💰 {_esc(price)}\n"
+            if min_order:
+                entry += f"📦 MOQ: {_esc(min_order)}\n"
+            if orders:
+                entry += f"🔥 {_esc(orders)}\n"
+            if supplier:
+                entry += f"🏭 {_esc(supplier)}\n"
+            entry += f"⭐ Score: {score}/100\n"
+            if reason:
+                entry += f"💡 {_esc(reason)}\n"
+            entry += f"🔗 [Open on {_esc(source)}]({link})\n\n"
+
+            if len(current) + len(entry) > 3800:
+                messages.append(current)
+                current = entry
+            else:
+                current += entry
+
+        current += f"{'─' * 30}\n\n"
 
     next_session = "18:00" if session_label == "noon" else "12:00"
-    footer = (
-        f"{'─' * 28}\n"
-        f"⏭ შემდეგი: {_esc(next_session)}\n"
-        f"🤖 _Alibaba Scout Bot_"
-    )
-    current_msg += footer
+    footer = f"⏭ შემდეგი: {_esc(next_session)}\n🤖 _Astroman Product Scout_"
+    current += footer
+    messages.append(current)
 
-    return _send_message(bot_token, chat_id, current_msg)
+    # Deduplicate (header may appear twice if nothing was added after it)
+    seen = set()
+    success = True
+    for msg in messages:
+        if msg in seen or msg == header:
+            continue
+        seen.add(msg)
+        if not _send_message(bot_token, chat_id, msg):
+            success = False
+
+    return success
 
 
 def _send_message(bot_token, chat_id, text):
@@ -105,6 +130,7 @@ def _send_message(bot_token, chat_id, text):
             return True
         else:
             logger.error(f"Telegram API error {resp.status_code}: {resp.text}")
+            # Retry without markdown
             payload["parse_mode"] = "HTML"
             payload["text"] = text.replace("\\", "")
             resp2 = httpx.post(url, json=payload, timeout=15)
@@ -115,5 +141,5 @@ def _send_message(bot_token, chat_id, text):
 
 
 def send_error_alert(error_msg, bot_token, chat_id):
-    text = f"⚠️ *Alibaba Scout Error*\n\n{_esc(error_msg)}"
+    text = f"⚠️ *Astroman Scout Error*\n\n{_esc(error_msg)}"
     return _send_message(bot_token, chat_id, text)

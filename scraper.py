@@ -1,6 +1,6 @@
 """
 Product scraper for Chinese wholesale suppliers.
-Scrapes Alibaba, 1688.com, and DHgate for trending products.
+Scrapes Alibaba and DHgate for trending + astronomy products.
 """
 
 import httpx
@@ -39,11 +39,43 @@ USER_AGENTS = [
 ]
 
 CATEGORIES = {
-    "lamps": ["led lamp", "desk lamp", "night light", "smart lamp", "table lamp", "moon lamp"],
-    "telescopes": ["telescope", "astronomical telescope", "monocular telescope", "spotting scope"],
-    "binoculars": ["binoculars", "night vision binoculars", "compact binoculars", "hunting binoculars"],
-    "kids_toys": ["kids toys", "educational toys", "rc car toy", "building blocks", "plush toy trending"],
-    "electronics": ["wireless earbuds", "smart watch", "phone accessories", "portable charger", "led strip"],
+    # Telescopes & optics — core Astroman category
+    "telescopes": [
+        "astronomical telescope", "refractor telescope", "reflector telescope",
+        "kids telescope beginners", "monocular spotting scope",
+    ],
+    # Space projectors — best sellers in Astroman
+    "projectors": [
+        "galaxy projector star", "nebula projector night light",
+        "star projector bluetooth", "space projector lamp rotating",
+    ],
+    # Space lamps & lighting — high margin items
+    "space_lamps": [
+        "moon lamp levitating", "saturn lamp led", "planet lamp night light",
+        "galaxy lamp magnetic floating", "astronaut lamp desk",
+    ],
+    # Kids astronomy & STEM toys
+    "space_toys": [
+        "solar system model kids", "astronomy kit children educational",
+        "planet model assembly", "space shuttle toy diecast",
+        "astronaut figurine toy", "telescope kit kids beginner",
+    ],
+    # Space decor & gifts — gift-buyer audience
+    "space_decor": [
+        "crystal ball moon light", "star map custom night sky",
+        "constellation map print", "astronaut figurine resin",
+        "space themed gift set",
+    ],
+    # Viral / trending gadgets — novelty, TikTok-friendly
+    "viral_gadgets": [
+        "levitating lamp magnetic", "crystal ball night light",
+        "plasma ball tesla", "hologram fan led 3d",
+        "infinity mirror tunnel light",
+    ],
+    # Binoculars
+    "binoculars": [
+        "compact binoculars high power", "night vision binoculars digital",
+    ],
 }
 
 
