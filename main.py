@@ -97,7 +97,7 @@ async def run(args):
     # Step 1: Scrape
     logger.info("Scraping products from Alibaba + DHgate...")
     try:
-        products = await scrape_all_categories()
+        products = await scrape_all_categories(max_items=args.count)
     except Exception as e:
         logger.error(f"Scraping failed: {e}")
         if config["telegram_bot_token"] and config["telegram_chat_id"]:
@@ -155,6 +155,7 @@ def main():
     parser.add_argument("--scrape-only", action="store_true", help="Just scrape, don't rank or notify")
     parser.add_argument("--dry-run", action="store_true", help="Scrape + rank but don't send Telegram")
     parser.add_argument("--session-label", type=str, default="", help="Session label (noon/evening)")
+    parser.add_argument("--count", type=int, default=8, help="Max products to scrape per keyword")
     args = parser.parse_args()
     asyncio.run(run(args))
 

@@ -271,7 +271,7 @@ async def scrape_dhgate(client, keyword, category, max_items=5):
     return products[:max_items]
 
 
-async def scrape_all_categories(categories=None):
+async def scrape_all_categories(categories=None, max_items=8):
     cats = categories or CATEGORIES
     all_products = []
 
@@ -280,8 +280,8 @@ async def scrape_all_categories(categories=None):
         for cat_name, keywords in cats.items():
             selected = random.sample(keywords, min(2, len(keywords)))
             for kw in selected:
-                tasks.append(scrape_alibaba(client, kw, cat_name))
-                tasks.append(scrape_dhgate(client, kw, cat_name))
+                tasks.append(scrape_alibaba(client, kw, cat_name, max_items=max_items))
+                tasks.append(scrape_dhgate(client, kw, cat_name, max_items=max_items))
                 await asyncio.sleep(random.uniform(0.5, 1.5))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
