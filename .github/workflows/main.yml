@@ -2,15 +2,9 @@ name: Daily Product Scout
 
 on:
   schedule:
-    - cron: "0 8 * * *"
-    - cron: "0 14 * * *"
-
-  workflow_dispatch:
-    inputs:
-      product_count:
-        description: "Number of products to send (default 5)"
-        required: false
-        default: "5"
+    # Runs every day at 08:00 Tbilisi time (UTC+4) = 04:00 UTC
+    - cron: "0 4 * * *"
+  workflow_dispatch:  # allow manual trigger from GitHub UI
 
 jobs:
   scout:
@@ -18,42 +12,22 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
+          python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Determine session label
-        id: session
         run: |
-          HOUR=$(TZ="Asia/Tbilisi" date +%H)
-          if [ "$HOUR" -lt 15 ]; then
-            echo "label=noon" >> "$GITHUB_OUTPUT"
-          else
-            echo "label=evening" >> "$GITHUB_OUTPUT"
-          fi
+          pip install requests beautifulsoup4 anthropic
 
-      - name: Run Alibaba Scout
+      - name: Run Product Scout
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: gpt-4o-mini
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          PRODUCT_COUNT: ${{ github.event.inputs.product_count || '8' }}
-          SESSION_LABEL: ${{ steps.session.outputs.label }}
-        run: python main.py --count "$PRODUCT_COUNT" --session-label "$SESSION_LABEL"
-
-      - name: Upload results artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: products-${{ github.run_number }}
-          path: output/*.json
-          retention-days: 30
+        run: |
+          python scout.py
