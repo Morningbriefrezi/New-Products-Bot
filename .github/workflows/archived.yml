@@ -1,0 +1,12 @@
+name: ARCHIVED
+
+on:
+  workflow_dispatch:
+
+jobs:
+  archived:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "This bot was merged into a hub repo."
+          exit 1
